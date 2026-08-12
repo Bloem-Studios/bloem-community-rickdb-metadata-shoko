@@ -1,24 +1,29 @@
-.PHONY: build test lint clean
+.PHONY: build rebuild clean test vet verify docker-copy
 
-BINARY=plugin
-PLATFORMS=linux/amd64 linux/arm64 darwin/arm64
-VERSION ?= $(shell git describe --tags --always 2>/dev/null | sed 's/^v//')
+BINARY=shoko_plugin
+VERSION ?= 0.2.5
 LDFLAGS=-s -w -X main.version=$(VERSION)
 
 build:
 	go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
+rebuild: clean
+	go clean -cache
+	go build -trimpath -ldflags="$(LDFLAGS)" -o $(BINARY) .
+
 test:
 	go test ./...
 
-lint:
-	golangci-lint run ./...
+vet:
+	go vet ./...
+
+verify: test vet build
 
 clean:
 	rm -f $(BINARY)
 
-build-all:
-	@for platform in $(PLATFORMS); do \
-		GOOS=$${platform%%/*} GOARCH=$${platform##*/} CGO_ENABLED=0 \
-		go build -trimpath -ldflags="$(LDFLAGS)" -o dist/$(BINARY)-$${platform%%/*}-$${platform##*/} .; \
-	done
+docker-copy: rebuild
+	docker cp $(BINARY) silo-atlantis:/app/plugins/shoko/anime.shoko_plugin
+	docker exec silo-atlantis chmod +x /app/plugins/shoko/anime.shoko_plugin
+	docker restart silo-atlantis
+	@echo "✅ Deployed to silo-atlantis"

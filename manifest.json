@@ -1,62 +1,110 @@
 {
-  "plugin_id": "silo.tmdb",
-  "version": "1.2.21",
+  "plugin_id": "shoko.anime",
+  "version": "0.2.5",
   "checksum": "__CHECKSUM__",
   "silo_api_version": "v1",
   "presentation": {
-    "display_name": "TMDB Metadata",
-    "summary": "Fetch movie and TV metadata and artwork from The Movie Database.",
-    "description_markdown": "Provides metadata for movies, series, seasons, and episodes, plus image resolution for TMDB artwork stored by Silo. It is a general-purpose first-party provider for movie and television libraries.",
-    "setup_markdown": "TMDB Metadata is installed as a default Silo plugin. Add or enable **TMDB** in a library's metadata provider chain; no plugin-specific configuration is required.",
-    "homepage_url": "https://www.themoviedb.org",
-    "source_url": "https://github.com/Silo-Server/silo-plugin-metadata-tmdb",
-    "support_url": "https://github.com/Silo-Server/silo-plugin-metadata-tmdb/issues",
-    "changelog_url": "https://github.com/Silo-Server/silo-plugin-metadata-tmdb/releases",
-    "publisher_name": "Silo",
-    "publisher_url": "https://github.com/Silo-Server",
-    "license_spdx": "AGPL-3.0-or-later"
+    "display_name": "Shoko Anime Metadata",
+    "summary": "Shoko anime metadata with native Shoko search and Group-to-Series mapping.",
+    "description_markdown": "Uses Shoko Series/Search plus existing TMDB provider IDs to attach Shoko metadata to already matched Silo titles. Maps Shoko Groups to Silo shows, child Shoko Series to seasons, and AniDB-enriched episodes to Silo episodes. Adds filtered AniDB tags and Shoko/AniDB cross-references without requiring a second title match.",
+    "setup_markdown": "Install this plugin, then add **Shoko** to your anime library's metadata provider chain. Configure the Shoko Server address and API key in the plugin settings panel.",
+    "homepage_url": "https://github.com/RickDB/silo-plugin-metadata-shoko",
+    "source_url": "https://github.com/RickDB/silo-plugin-metadata-shoko",
+    "support_url": "https://github.com/RickDB/silo-plugin-metadata-shoko/issues",
+    "changelog_url": "https://github.com/RickDB/silo-plugin-metadata-shoko/releases",
+    "publisher_name": "RickDB",
+    "publisher_url": "https://github.com/RickDB",
+    "license_spdx": "MIT"
   },
   "supported_platforms": [
     {
-      "os": "darwin",
-      "arch": "arm64"
-    },
-    {
       "os": "linux",
       "arch": "amd64"
-    },
-    {
-      "os": "linux",
-      "arch": "arm64"
     }
   ],
   "capabilities": [
     {
       "type": "metadata_provider.v1",
-      "id": "tmdb",
-      "display_name": "TMDB",
-      "description": "The Movie Database — metadata for movies and TV series.",
+      "id": "shoko",
+      "display_name": "Shoko",
+      "description": "Anime metadata from Shoko Server with AniDB + TMDB support.",
       "metadata": {
         "default_priority": {
-          "movie": 2,
-          "series": 3,
-          "season": 3,
-          "episode": 3
+          "series": 1,
+          "season": 1,
+          "episode": 1,
+          "movie": 1
         }
       }
     },
     {
       "type": "image_resolver.v1",
-      "id": "tmdb",
-      "display_name": "TMDB Images",
-      "description": "Resolves tmdb:// image paths to The Movie Database image URLs.",
+      "id": "shoko",
+      "display_name": "Shoko Images",
+      "description": "Resolves shoko:// image paths to Shoko Server artwork URLs.",
       "metadata": {
         "schemes": [
-          "tmdb"
+          "shoko"
         ],
         "priority": 100
       }
     }
   ],
-  "global_config_schema": []
+  "global_config_schema": [
+    {
+      "key": "server",
+      "title": "Shoko Server Connection",
+      "description": "Configure your Shoko Server address and API key.",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"server_url\":{},\"api_key\":{}},\"additionalProperties\":false}",
+      "required": true,
+      "admin_form": {
+        "submit_label": "Save settings",
+        "fields": [
+          {
+            "key": "server_url",
+            "label": "Shoko Server Address",
+            "description": "Base URL of your Shoko Server instance (e.g., https://shoko.domain.ltd)",
+            "control": "ADMIN_FORM_CONTROL_TEXT"
+          },
+          {
+            "key": "api_key",
+            "label": "API Key",
+            "description": "API key for authenticating with Shoko Server",
+            "control": "ADMIN_FORM_CONTROL_PASSWORD",
+            "secret": true
+          }
+        ]
+      }
+    },
+    {
+      "key": "tags",
+      "title": "Tag Filtering",
+      "description": "Control which AniDB tags are imported as genres.",
+      "json_schema": "{\"type\":\"object\",\"properties\":{\"show_verified_tags\":{},\"hide_spoiler_tags\":{},\"tag_weight_threshold\":{}},\"additionalProperties\":false}",
+      "required": false,
+      "admin_form": {
+        "submit_label": "Save settings",
+        "fields": [
+          {
+            "key": "show_verified_tags",
+            "label": "Show Verified Tags Only",
+            "description": "When enabled, only include tags where IsVerified=true",
+            "control": "ADMIN_FORM_CONTROL_SWITCH"
+          },
+          {
+            "key": "hide_spoiler_tags",
+            "label": "Hide Spoiler Tags",
+            "description": "When enabled, exclude tags marked as spoilers (IsSpoiler=true)",
+            "control": "ADMIN_FORM_CONTROL_SWITCH"
+          },
+          {
+            "key": "tag_weight_threshold",
+            "label": "Minimum Tag Weight",
+            "description": "Only include tags with weight >= this value (higher = more important)",
+            "control": "ADMIN_FORM_CONTROL_NUMBER"
+          }
+        ]
+      }
+    }
+  ]
 }

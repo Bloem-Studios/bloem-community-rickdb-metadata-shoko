@@ -1,5 +1,7 @@
 github.com/Silo-Server/silo-plugin-sdk v0.12.0 h1:7MnaSIJBVdRE8FhfLXWx7Pe+Q2apJiaPMotfhb1VHoE=
 github.com/Silo-Server/silo-plugin-sdk v0.12.0/go.mod h1:etqmxLTwjxpFH9goAjBDfNDoqHMv2/sqUXu8yx3hNfA=
+github.com/Silo-Server/silo-plugin-tmdb v1.2.21 h1:0Z5LxFdm/7nzFPwMKQwbIp8PeOnqthnCWKNwtVu3sGo=
+github.com/Silo-Server/silo-plugin-tmdb v1.2.21/go.mod h1:jCHSOpWkAUWMoMhuJ55/hRee8YycFh2LgOLN1dcLfvo=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=
 github.com/bufbuild/protocompile v0.14.1/go.mod h1:ppVdAIhbr2H8asPk6k4pY7t9zB1OU5DoEw9xY/FUi1c=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

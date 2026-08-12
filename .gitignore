@@ -1,14 +1,30 @@
+# Build output
 plugin
-dist/
+/shoko_plugin
+/dist/
+/reports/
 *.exe
+
+# Go workspace and test/build artifacts
 go.work
 go.work.sum
+*.test
+*.out
+coverage.out
+
+# Environment and local logs
 .env
 .env.*
 !.env.example
 *.log
+*.tmp
 logs/
+
+# Editors, agents, and OS metadata
 .DS_Store
+Thumbs.db
+.vscode/
+.idea/
 .claude/
 .codex/
 .cursor/

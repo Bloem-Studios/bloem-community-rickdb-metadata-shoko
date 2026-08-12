@@ -1,28 +1,86 @@
-# Silo TMDB Plugin
+# Silo Shoko Metadata Plugin
 
-First-party Silo metadata plugin backed by TMDB.
+Community metadata-provider plugin for [Silo Server](https://github.com/Silo-Server/silo-server), backed by [Shoko Server](https://github.com/ShokoAnime/ShokoServer).
 
-## Dependency Model
+It maps Shoko Groups to Silo shows, child Shoko Series to seasons, and AniDB-enriched Shoko episodes to Silo episodes. Existing TMDB IDs can be used to connect an already matched Silo title to every corresponding Shoko series, allowing Shoko to enrich it with anime-specific metadata and filtered AniDB tags.
 
-This repository consumes `github.com/Silo-Server/silo-plugin-sdk` as a normal Go module dependency. CI and release builds run with `GOWORK=off` and expect the SDK version in `go.mod` to resolve from a published semver tag.
+> [!IMPORTANT]
+> This is a community plugin and is not maintained or endorsed by Silo Server, Shoko, AniDB, or TMDB.
 
-For local multi-repo development, use a temporary `replace` or a local `go.work` that points at `dev/github/silo-plugin-sdk`. Do not commit machine-local filesystem replaces as the supported release path.
+## Features
 
-## Development
+- Native Shoko `/api/v3/Series/Search` title and synonym matching
+- Shoko Group → Silo show and Shoko Series → Silo season mapping
+- Movie and OVA handling independent of normal TV-season mapping
+- Existing TMDB provider-ID enrichment and season/cour deduplication
+- AniDB episode enrichment, including episodes without local media files
+- Configurable verified-tag, spoiler-tag, and tag-weight filtering
+- `shoko://` image resolution through the configured Shoko Server
 
-```sh
-go test ./...
-go build .
+## Requirements
+
+- A compatible Silo Server installation
+- Shoko Server with API v3 enabled and a populated library
+- Network access from Silo to Shoko Server
+- Go 1.26 or newer when building from source
+
+## Installation
+
+Download `plugin-linux-amd64` from the latest [GitHub release](https://github.com/RickDB/silo-plugin-metadata-shoko/releases), then install it using Silo's plugin-management interface or place it in the plugin directory expected by your Silo installation.
+
+After installation:
+
+1. Configure the Shoko Server base URL and API key in Silo's plugin settings.
+2. Optionally configure AniDB tag filtering.
+3. Add **Shoko** to the metadata-provider chain for the relevant anime library.
+4. Keep TMDB ahead of Shoko when you want Shoko to enrich existing TMDB matches.
+
+## Configuration
+
+| Setting | Required | Description |
+| --- | --- | --- |
+| Shoko Server Address | Yes | Base URL reachable from Silo, for example `http://shoko:8111`. |
+| API Key | Yes | Shoko API key used to authenticate API v3 requests. |
+| Show Verified Tags Only | No | Imports only AniDB tags marked as verified. |
+| Hide Spoiler Tags | No | Excludes AniDB tags marked as spoilers. |
+| Minimum Tag Weight | No | Imports only tags at or above the selected weight. |
+
+Credentials are supplied through Silo's plugin settings and are not hard-coded in this repository.
+
+## Metadata model
+
+```text
+Shoko Group
+└── Silo show
+    ├── child Shoko Series → Silo season
+    └── AniDB-enriched Shoko Episode → Silo episode
 ```
+
+Normal Silo seasons include AniDB entries of type `Episode`. Credits, trailers, and other non-standard episode types are excluded. Movies and OVAs are not blindly converted into TV seasons.
+
+## Build and test
+
+```bash
+go mod tidy
+make verify
+```
+
+The local build output is `shoko_plugin`.
+
+The `docker-copy` Make target is a developer convenience configured for a container named `silo-atlantis`. Adjust it for your own environment before use.
+
+## Releases
+
+Tags matching `v*` trigger the release workflow. It builds the supported platform binary, calculates its SHA-256 checksum, and publishes both files in a GitHub Release. See [PUBLISHING.md](PUBLISHING.md) for the initial repository setup and release checklist.
+
+## Support
+
+Use [GitHub Issues](https://github.com/RickDB/silo-plugin-metadata-shoko/issues) for reproducible bugs and feature requests. Include the plugin version, Silo version, Shoko version, relevant logs with secrets removed, and reproduction steps.
 
 ## Attribution
 
-This product uses the TMDB API but is not endorsed or certified by TMDB. All metadata and images sourced from this plugin are provided by [The Movie Database (TMDB)](https://www.themoviedb.org/).
-
-<a href="https://www.themoviedb.org/">
-  <img src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB Logo" width="200">
-</a>
+This plugin integrates with Shoko Server and consumes metadata and identifiers supplied by Shoko's configured upstream sources. Shoko, AniDB, and TMDB names and marks belong to their respective owners.
 
 ## License
 
-`silo-plugin-metadata-tmdb` is licensed under `AGPL-3.0-or-later`. See [LICENSE](LICENSE).
+The current working tree declares the MIT License in [LICENSE](LICENSE). Before the first public release, verify that this is compatible with all inherited code and repository history; the project originated from the AGPL-3.0-or-later Silo TMDB plugin. See [PUBLISHING.md](PUBLISHING.md#2-resolve-the-license-before-publishing).
