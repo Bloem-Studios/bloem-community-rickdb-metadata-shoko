@@ -23,7 +23,7 @@ clean:
 	rm -f $(BINARY)
 
 docker-copy: rebuild
-	docker cp $(BINARY) silo-atlantis:/app/plugins/shoko/anime.shoko_plugin
-	docker exec silo-atlantis chmod +x /app/plugins/shoko/anime.shoko_plugin
-	docker restart silo-atlantis
-	@echo "✅ Deployed to silo-atlantis"
+	docker cp $(BINARY) silo-server:/app/plugins/shoko/anime.shoko_plugin
+	docker exec silo-server chmod +x /app/plugins/shoko/anime.shoko_plugin
+	docker restart silo-server
+	@echo "✅ Deployed to silo-server"

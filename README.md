@@ -67,7 +67,7 @@ make verify
 
 The local build output is `shoko_plugin`.
 
-The `docker-copy` Make target is a developer convenience configured for a container named `silo-atlantis`. Adjust it for your own environment before use.
+The `docker-copy` Make target is a developer convenience configured for a container named `silo-server`. Adjust it for your own environment before use.
 
 ## Releases
 
