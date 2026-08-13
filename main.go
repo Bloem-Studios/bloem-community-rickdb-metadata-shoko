@@ -223,6 +223,14 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 		if err != nil {
 			return nil, err
 		}
+		titleAliases := make([]*pluginv1.TitleAlias, 0, len(result.TitleAliases))
+		for _, alias := range result.TitleAliases {
+			titleAliases = append(titleAliases, &pluginv1.TitleAlias{
+				Title:    alias.Title,
+				Language: alias.Language,
+				Kind:     alias.Kind,
+			})
+		}
 		response.Results = append(response.Results, &pluginv1.ProviderSearchResult{
 			ProviderId:    result.ProviderIDs["shoko"],
 			ItemType:      itemTypeForResult(result.ItemType, req.GetItemType()),
@@ -232,6 +240,7 @@ func (s *metadataServer) Search(ctx context.Context, req *pluginv1.SearchMetadat
 			ProviderIds:   providerIDs,
 			ImageUrl:      shokoCanonicalPath(baseURL, result.ImageURL),
 			OriginalTitle: result.OriginalTitle,
+			TitleAliases:  titleAliases,
 		})
 	}
 	return response, nil

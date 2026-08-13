@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"golang.org/x/time/rate"
 )
 
 // ============================================================================
@@ -31,10 +33,19 @@ type TagFilterConfig struct {
 // SHOKO CLIENT
 // ============================================================================
 
+const (
+	// Shoko is normally on the local network, so keep interactive requests
+	// responsive while preventing expanded searches from becoming an
+	// unbounded burst. One limiter is shared by all calls from this client.
+	shokoRequestsPerSecond = 10
+	shokoRequestBurst      = 3
+)
+
 type shokoClient struct {
 	baseURL string
 	apiKey  string
 	http    *http.Client
+	limiter *rate.Limiter
 	config  TagFilterConfig
 
 	cacheMu     sync.RWMutex
@@ -59,6 +70,7 @@ func newShokoClient(baseURL, apiKey string, config TagFilterConfig) *shokoClient
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		limiter:     rate.NewLimiter(rate.Limit(shokoRequestsPerSecond), shokoRequestBurst),
 		cache:       make(map[int]*shokoSeries),
 		groupCache:  make(map[int]*shokoGroup),
 		groupSeries: make(map[int][]shokoSeries),
@@ -66,6 +78,10 @@ func newShokoClient(baseURL, apiKey string, config TagFilterConfig) *shokoClient
 }
 
 func (c *shokoClient) doGet(ctx context.Context, endpoint string) (*http.Response, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("wait for Shoko request limit: %w", err)
+	}
+
 	u, err := url.Parse(c.baseURL + endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("parse Shoko URL: %w", err)
@@ -827,11 +843,24 @@ func (c *shokoClient) getSeriesByTMDBShow(ctx context.Context, tmdbID int) ([]*s
 type SearchResult struct {
 	Name          string
 	OriginalTitle string
+	TitleAliases  []SearchTitleAlias
 	Year          int
 	Overview      string
 	ProviderIDs   map[string]string
 	ImageURL      string
 	ItemType      string
+}
+
+type SearchTitleAlias struct {
+	Title    string
+	Language string
+	Kind     string
+}
+
+type rankedSeriesHit struct {
+	hit            shokoSeriesSearchResult
+	candidateIndex int
+	titleScore     float64
 }
 
 type MetadataResult struct {
@@ -1060,6 +1089,113 @@ func extractSeriesNameFromFile(filePath string) string {
 	}
 	name = regexp.MustCompile(`[-_\[\]()]+`).ReplaceAllString(name, " ")
 	return strings.TrimSpace(name)
+}
+
+var (
+	seasonSuffixPattern  = regexp.MustCompile(`(?i)\s+(?:season|series|cour|part)\s*[-_. ]*\d+\s*$`)
+	episodeSuffixPattern = regexp.MustCompile(`(?i)\s+(?:s\d{1,2}\s*)?(?:e|ep|episode)\s*\d+(?:\s*[-+]\s*\d+)?\s*$`)
+	yearSuffixPattern    = regexp.MustCompile(`\s*[\[(](?:19|20)\d{2}[\])]?\s*$`)
+	bracketNoisePattern  = regexp.MustCompile(`\s*[\[(][^\])]*[\])]`)
+	releaseNoisePattern  = regexp.MustCompile(`(?i)\b(?:2160p|1080p|720p|480p|web[-_. ]?dl|webrip|blu[-_. ]?ray|bdrip|x26[45]|h\.?26[45]|hevc|av1|aac|flac|multi(?:sub)?|dual[-_. ]?audio)\b.*$`)
+)
+
+// titleSearchCandidates turns the value supplied by Silo into a small set of
+// useful Shoko queries. Silo normally sends a parsed title, but some scanners
+// pass a filename or path-like title when parsing fails.
+func titleSearchCandidates(query string) []string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil
+	}
+
+	pathQuery := strings.ReplaceAll(filepath.ToSlash(query), `\`, "/")
+	inputs := []string{query}
+	if strings.Contains(pathQuery, "/") {
+		inputs = nil
+		parts := strings.Split(pathQuery, "/")
+		for i := len(parts) - 1; i >= 0 && len(inputs) < 5; i-- {
+			part := strings.TrimSpace(parts[i])
+			if part != "" && !isWindowsDrive(part) && !isGenericSeasonFolder(part) && !isGenericLibraryFolder(part) {
+				inputs = append(inputs, part)
+			}
+		}
+	}
+
+	seen := make(map[string]struct{})
+	result := make([]string, 0, 6)
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		key := normalizeTitle(value)
+		if key == "" {
+			return
+		}
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		result = append(result, value)
+	}
+
+	for _, input := range inputs {
+		base := stripMediaExtension(input)
+		base = strings.TrimSpace(strings.NewReplacer("_", " ", ".", " ").Replace(base))
+		cleaned := bracketNoisePattern.ReplaceAllString(base, " ")
+		cleaned = releaseNoisePattern.ReplaceAllString(cleaned, "")
+		cleaned = episodeSuffixPattern.ReplaceAllString(cleaned, "")
+		cleaned = strings.TrimRight(cleaned, " -_.")
+		cleaned = strings.Join(strings.Fields(cleaned), " ")
+		withoutSeason := seasonSuffixPattern.ReplaceAllString(cleaned, "")
+		withoutYear := yearSuffixPattern.ReplaceAllString(withoutSeason, "")
+
+		// Prefer cleaned titles, while retaining the original parsed title as a
+		// fallback for legitimate titles containing words such as "Part".
+		add(withoutYear)
+		add(withoutSeason)
+		add(cleaned)
+		if !strings.Contains(pathQuery, "/") {
+			add(query)
+		}
+		if len(result) >= 6 {
+			break
+		}
+	}
+	return result
+}
+
+func isWindowsDrive(value string) bool {
+	return len(value) == 2 && ((value[0] >= 'a' && value[0] <= 'z') || (value[0] >= 'A' && value[0] <= 'Z')) && value[1] == ':'
+}
+
+func isGenericLibraryFolder(value string) bool {
+	switch normalizeTitle(value) {
+	case "anime", "tv", "tv shows", "shows", "series", "media", "videos":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGenericSeasonFolder(value string) bool {
+	normalized := normalizeTitle(stripMediaExtension(value))
+	fields := strings.Fields(normalized)
+	if len(fields) != 2 {
+		return false
+	}
+	if fields[0] != "season" && fields[0] != "series" && fields[0] != "cour" && fields[0] != "part" {
+		return false
+	}
+	_, err := strconv.Atoi(fields[1])
+	return err == nil
+}
+
+func stripMediaExtension(value string) string {
+	ext := strings.ToLower(filepath.Ext(value))
+	switch ext {
+	case ".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".ts", ".m2ts", ".webm", ".ogm", ".iso":
+		return strings.TrimSuffix(value, filepath.Ext(value))
+	default:
+		return value
+	}
 }
 
 var titleStopWords = map[string]struct{}{
@@ -1344,14 +1480,52 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 		}
 	}
 
-	if strings.TrimSpace(query) == "" {
+	candidates := titleSearchCandidates(query)
+	if len(candidates) == 0 {
 		return nil, nil
 	}
 
-	searchHits, err := p.client.searchSeries(ctx, query, 25)
-	if err != nil {
-		return nil, fmt.Errorf("Search searchSeries: %w", err)
+	bestSeriesHits := make(map[int]rankedSeriesHit)
+	var firstSearchErr error
+	for candidateIndex, candidate := range candidates {
+		candidateHits, searchErr := p.client.searchSeries(ctx, candidate, 25)
+		if searchErr != nil {
+			if firstSearchErr == nil {
+				firstSearchErr = searchErr
+			}
+			continue
+		}
+		for _, hit := range candidateHits {
+			if hit.IDs.ID == 0 {
+				continue
+			}
+			title := hit.Match
+			if title == "" {
+				title = hit.Name
+			}
+			ranked := rankedSeriesHit{
+				hit:            hit,
+				candidateIndex: candidateIndex,
+				titleScore:     fuzzyMatchScore(title, candidate),
+			}
+			previous, exists := bestSeriesHits[hit.IDs.ID]
+			if !exists || betterSeriesHit(ranked.hit, ranked.candidateIndex, ranked.titleScore,
+				previous.hit, previous.candidateIndex, previous.titleScore) {
+				bestSeriesHits[hit.IDs.ID] = ranked
+			}
+		}
 	}
+	if len(bestSeriesHits) == 0 && firstSearchErr != nil {
+		return nil, fmt.Errorf("Search searchSeries: %w", firstSearchErr)
+	}
+	searchHits := make([]rankedSeriesHit, 0, len(bestSeriesHits))
+	for _, hit := range bestSeriesHits {
+		searchHits = append(searchHits, hit)
+	}
+	sort.SliceStable(searchHits, func(i, j int) bool {
+		return betterSeriesHit(searchHits[i].hit, searchHits[i].candidateIndex, searchHits[i].titleScore,
+			searchHits[j].hit, searchHits[j].candidateIndex, searchHits[j].titleScore)
+	})
 
 	// Shoko already ranks title/synonym matches. Convert each Series hit to its
 	// top-level Group and deduplicate sequel/season hits that belong to the same show.
@@ -1359,11 +1533,14 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 		groupID    int
 		exact      bool
 		distance   float64
+		titleScore float64
+		candidate  int
 		seriesYear int
 	}
 	hits := make([]groupHit, 0, len(searchHits))
 	seenGroups := make(map[int]struct{}, len(searchHits))
-	for _, hit := range searchHits {
+	for _, ranked := range searchHits {
+		hit := ranked.hit
 		groupID := hit.IDs.TopLevelGroup
 		if groupID == 0 {
 			groupID = hit.IDs.ParentGroup
@@ -1396,6 +1573,8 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 			groupID:    groupID,
 			exact:      hit.ExactMatch,
 			distance:   hit.Distance,
+			titleScore: ranked.titleScore,
+			candidate:  ranked.candidateIndex,
 			seriesYear: seriesYear,
 		})
 	}
@@ -1404,6 +1583,12 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 	sort.SliceStable(hits, func(i, j int) bool {
 		if hits[i].exact != hits[j].exact {
 			return hits[i].exact
+		}
+		if hits[i].titleScore != hits[j].titleScore {
+			return hits[i].titleScore > hits[j].titleScore
+		}
+		if hits[i].candidate != hits[j].candidate {
+			return hits[i].candidate < hits[j].candidate
 		}
 		return hits[i].distance < hits[j].distance
 	})
@@ -1419,14 +1604,60 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 			continue
 		}
 		result := p.groupSearchResult(ctx, group)
+		ranked := searchHitsForGroup(searchHits, hit.groupID)
+		if ranked != nil {
+			result.TitleAliases = appendSearchAlias(result.TitleAliases, ranked.hit.Match, "", "alternate")
+			result.TitleAliases = appendSearchAlias(result.TitleAliases, ranked.hit.Name, "", "alternate")
+		}
 		if year > 0 && result.Year > 0 && result.Year != int(year) && !hit.exact {
 			continue
 		}
 		results = append(results, result)
 	}
 
-	fmt.Printf("[SHOKO][SEARCH] Shoko ranked %d series hits -> %d unique group results\n", len(searchHits), len(results))
+	fmt.Printf("[SHOKO][SEARCH] Candidates=%q ranked %d series hits -> %d unique group results\n", candidates, len(searchHits), len(results))
 	return results, nil
+}
+
+func searchHitsForGroup(hits []rankedSeriesHit, groupID int) *rankedSeriesHit {
+	for i := range hits {
+		candidateGroupID := hits[i].hit.IDs.TopLevelGroup
+		if candidateGroupID == 0 {
+			candidateGroupID = hits[i].hit.IDs.ParentGroup
+		}
+		if candidateGroupID == groupID {
+			return &hits[i]
+		}
+	}
+	return nil
+}
+
+func appendSearchAlias(aliases []SearchTitleAlias, title, language, kind string) []SearchTitleAlias {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return aliases
+	}
+	normalized := normalizeTitle(title)
+	for _, alias := range aliases {
+		if normalizeTitle(alias.Title) == normalized {
+			return aliases
+		}
+	}
+	return append(aliases, SearchTitleAlias{Title: title, Language: language, Kind: kind})
+}
+
+func betterSeriesHit(a shokoSeriesSearchResult, aCandidate int, aTitleScore float64,
+	b shokoSeriesSearchResult, bCandidate int, bTitleScore float64) bool {
+	if a.ExactMatch != b.ExactMatch {
+		return a.ExactMatch
+	}
+	if aTitleScore != bTitleScore {
+		return aTitleScore > bTitleScore
+	}
+	if aCandidate != bCandidate {
+		return aCandidate < bCandidate
+	}
+	return a.Distance < b.Distance
 }
 
 func (p *Provider) groupSearchResult(ctx context.Context, group *shokoGroup) SearchResult {
@@ -1458,6 +1689,16 @@ func (p *Provider) groupSearchResult(ctx context.Context, group *shokoGroup) Sea
 	if group.IDs.MainSeries != 0 {
 		if mainSeries, err := p.client.getSeries(ctx, group.IDs.MainSeries); err == nil {
 			result.Year = extractYear(mainSeries.AirDate)
+			result.TitleAliases = appendSearchAlias(result.TitleAliases, mainSeries.Name, "", "alternate")
+			if mainSeries.AniDB != nil {
+				for _, title := range mainSeries.AniDB.Titles {
+					kind := "alternate"
+					if title.Default || title.Preferred {
+						kind = "localized"
+					}
+					result.TitleAliases = appendSearchAlias(result.TitleAliases, title.Name, title.Language, kind)
+				}
+			}
 			if len(mainSeries.IDs.TMDB.Show) > 0 {
 				result.ProviderIDs["tmdb"] = strconv.Itoa(mainSeries.IDs.TMDB.Show[0])
 			}
@@ -1478,13 +1719,32 @@ func (p *Provider) searchMovieSeries(ctx context.Context, query string, provider
 			}
 		}
 	}
-	if strings.TrimSpace(query) == "" {
+	queries := titleSearchCandidates(query)
+	if len(queries) == 0 {
 		return nil, nil
 	}
 
-	hits, err := p.client.searchSeries(ctx, query, 25)
-	if err != nil {
-		return nil, fmt.Errorf("searchMovieSeries searchSeries: %w", err)
+	var hits []shokoSeriesSearchResult
+	seenHit := make(map[int]struct{})
+	var firstErr error
+	for _, candidate := range queries {
+		candidateHits, err := p.client.searchSeries(ctx, candidate, 25)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		for _, hit := range candidateHits {
+			if _, exists := seenHit[hit.IDs.ID]; exists {
+				continue
+			}
+			seenHit[hit.IDs.ID] = struct{}{}
+			hits = append(hits, hit)
+		}
+	}
+	if len(hits) == 0 && firstErr != nil {
+		return nil, fmt.Errorf("searchMovieSeries searchSeries: %w", firstErr)
 	}
 
 	type movieHit struct {

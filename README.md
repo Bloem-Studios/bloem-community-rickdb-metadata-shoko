@@ -10,6 +10,8 @@ It maps Shoko Groups to Silo shows, child Shoko Series to seasons, and AniDB-enr
 ## Features
 
 - Native Shoko `/api/v3/Series/Search` title and synonym matching
+- Path- and release-name-aware fallback matching for titles Silo could not cleanly parse
+- Moderate per-client Shoko request limiting (10 requests/second, burst of 3)
 - Shoko Group → Silo show and Shoko Series → Silo season mapping
 - Movie and OVA handling independent of normal TV-season mapping
 - Existing TMDB provider-ID enrichment and season/cour deduplication
