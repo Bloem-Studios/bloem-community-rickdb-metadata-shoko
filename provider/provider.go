@@ -1423,6 +1423,11 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 	}
 
 	if groupID, ok := providerInt("", providerIDs, "shoko_group"); ok {
+		if exactResults := p.exactGroupSeriesSearchResults(ctx, query, groupID); len(exactResults) > 0 {
+			fmt.Printf("[SHOKO][SEARCH] Existing group %d and exact title %q -> %d series result(s)\n",
+				groupID, query, len(exactResults))
+			return exactResults, nil
+		}
 		group, err := p.client.getGroup(ctx, groupID)
 		if err != nil {
 			return nil, err
@@ -1433,6 +1438,11 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 	if tmdbID, ok := providerTMDBShowID(providerIDs); ok {
 		seriesMatches, matchErr := p.client.getSeriesByTMDBShow(ctx, tmdbID)
 		if matchErr == nil && len(seriesMatches) > 0 {
+			if exactResults := p.exactLinkedSeriesSearchResults(query, seriesMatches); len(exactResults) > 0 {
+				fmt.Printf("[SHOKO][SEARCH] TMDB show %d and exact title %q -> %d series result(s)\n",
+					tmdbID, query, len(exactResults))
+				return exactResults, nil
+			}
 			seenGroups := map[int]struct{}{}
 			results := make([]SearchResult, 0)
 			for _, series := range seriesMatches {
@@ -1466,6 +1476,9 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 			series, err := p.client.getSeriesByAniDB(ctx, anidbID)
 			if err != nil {
 				return nil, err
+			}
+			if exactResults := p.exactLinkedSeriesSearchResults(query, []*shokoSeries{series}); len(exactResults) > 0 {
+				return exactResults, nil
 			}
 			groupID := series.IDs.TopLevelGroup
 			if groupID == 0 {
@@ -1526,6 +1539,16 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 		return betterSeriesHit(searchHits[i].hit, searchHits[i].candidateIndex, searchHits[i].titleScore,
 			searchHits[j].hit, searchHits[j].candidateIndex, searchHits[j].titleScore)
 	})
+
+	// A Shoko Group represents a franchise and its MainSeries is not necessarily
+	// the Series whose title matched the query. Preserve the exact Series identity
+	// when the full user-supplied title matched; otherwise a search such as
+	// "Night Shift Nurses - Experiment" is collapsed to the parent franchise and
+	// later resolves metadata for a different MainSeries.
+	if exactResults := p.exactSeriesSearchResults(ctx, query, searchHits); len(exactResults) > 0 {
+		fmt.Printf("[SHOKO][SEARCH] Exact title %q -> %d series result(s)\n", query, len(exactResults))
+		return exactResults, nil
+	}
 
 	// Shoko already ranks title/synonym matches. Convert each Series hit to its
 	// top-level Group and deduplicate sequel/season hits that belong to the same show.
@@ -1617,6 +1640,109 @@ func (p *Provider) Search(ctx context.Context, query, itemType string, year int3
 
 	fmt.Printf("[SHOKO][SEARCH] Candidates=%q ranked %d series hits -> %d unique group results\n", candidates, len(searchHits), len(results))
 	return results, nil
+}
+
+func (p *Provider) exactGroupSeriesSearchResults(ctx context.Context, query string, groupID int) []SearchResult {
+	queryTitle := normalizeTitle(query)
+	if queryTitle == "" {
+		return nil
+	}
+
+	groupSeries, err := p.client.getGroupSeries(ctx, groupID)
+	if err != nil {
+		return nil
+	}
+	seriesMatches := make([]*shokoSeries, 0)
+	for i := range groupSeries {
+		if normalizeTitle(groupSeries[i].Name) != queryTitle {
+			continue
+		}
+		series, getErr := p.client.getSeries(ctx, groupSeries[i].IDs.ID)
+		if getErr == nil && series != nil {
+			seriesMatches = append(seriesMatches, series)
+		}
+	}
+	return p.exactLinkedSeriesSearchResults(query, seriesMatches)
+}
+
+func (p *Provider) exactLinkedSeriesSearchResults(query string, seriesMatches []*shokoSeries) []SearchResult {
+	queryTitle := normalizeTitle(query)
+	if queryTitle == "" {
+		return nil
+	}
+
+	results := make([]SearchResult, 0)
+	for _, series := range seriesMatches {
+		if series == nil {
+			continue
+		}
+		matched := normalizeTitle(series.Name) == queryTitle
+		if !matched && series.AniDB != nil {
+			for _, title := range series.AniDB.Titles {
+				if normalizeTitle(title.Name) == queryTitle {
+					matched = true
+					break
+				}
+			}
+		}
+		if !matched {
+			continue
+		}
+
+		result := p.seriesSearchResult(series)
+		result.ItemType = "series"
+		if series.AniDB != nil {
+			for _, title := range series.AniDB.Titles {
+				kind := "alternate"
+				if title.Default || title.Preferred {
+					kind = "localized"
+				}
+				result.TitleAliases = appendSearchAlias(result.TitleAliases, title.Name, title.Language, kind)
+			}
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
+func (p *Provider) exactSeriesSearchResults(ctx context.Context, query string, hits []rankedSeriesHit) []SearchResult {
+	queryTitle := normalizeTitle(query)
+	if queryTitle == "" {
+		return nil
+	}
+
+	results := make([]SearchResult, 0)
+	for _, ranked := range hits {
+		hit := ranked.hit
+		matchedTitle := hit.Match
+		if matchedTitle == "" {
+			matchedTitle = hit.Name
+		}
+		if !hit.ExactMatch || normalizeTitle(matchedTitle) != queryTitle {
+			continue
+		}
+		series, err := p.client.getSeries(ctx, hit.IDs.ID)
+		if err != nil || series == nil {
+			continue
+		}
+		result := p.seriesSearchResult(series)
+		result.ItemType = "series"
+		result.TitleAliases = appendSearchAlias(result.TitleAliases, hit.Match, "", "alternate")
+		if series.AniDB != nil {
+			for _, title := range series.AniDB.Titles {
+				kind := "alternate"
+				if title.Default || title.Preferred {
+					kind = "localized"
+				}
+				result.TitleAliases = appendSearchAlias(result.TitleAliases, title.Name, title.Language, kind)
+			}
+		}
+		results = append(results, result)
+		if len(results) == 10 {
+			break
+		}
+	}
+	return results
 }
 
 func searchHitsForGroup(hits []rankedSeriesHit, groupID int) *rankedSeriesHit {
@@ -1794,6 +1920,9 @@ func (p *Provider) seriesSearchResult(series *shokoSeries) SearchResult {
 	}
 	if len(series.IDs.TMDB.Movie) > 0 {
 		ids["tmdb_movie"] = strconv.Itoa(series.IDs.TMDB.Movie[0])
+	}
+	if len(series.IDs.TMDB.Show) > 0 {
+		ids["tmdb"] = strconv.Itoa(series.IDs.TMDB.Show[0])
 	}
 	poster := ""
 	if img := firstImage(series.Images.Posters); img != nil {

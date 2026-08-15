@@ -1,7 +1,7 @@
 .PHONY: build rebuild clean test vet verify docker-copy
 
 BINARY=shoko_plugin
-VERSION ?= 0.2.5
+VERSION ?= 0.2.6
 LDFLAGS=-s -w -X main.version=$(VERSION)
 
 build:

@@ -21,7 +21,7 @@ import (
 	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
 )
 
-var version = "0.2.5"
+var version = "0.2.6"
 
 //go:embed manifest.json
 var manifestJSON []byte

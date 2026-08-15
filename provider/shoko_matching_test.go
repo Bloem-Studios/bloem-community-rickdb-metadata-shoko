@@ -1,6 +1,10 @@
 package provider
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
 
@@ -93,5 +97,103 @@ func TestAppendSearchAliasDeduplicatesNormalizedTitles(t *testing.T) {
 	aliases = appendSearchAlias(aliases, "ドクターストーン", "ja", "localized")
 	if len(aliases) != 2 {
 		t.Fatalf("len(aliases) = %d, want 2: %#v", len(aliases), aliases)
+	}
+}
+
+func TestSearchPreservesExactSeriesInsteadOfCollapsingToGroup(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v3/Series/Search":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"ExactMatch": true,
+					"Distance":   0,
+					"Match":      "night shift nurses experiment",
+					"Name":       "Night Shift Nurses - Experiment",
+					"IDs": map[string]any{
+						"ID": 158, "AniDB": 3415, "ParentGroup": 876, "TopLevelGroup": 876,
+					},
+				},
+			})
+		case "/api/v3/Series/158":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"Name":    "Night Shift Nurses - Experiment",
+				"AirDate": "2004-07-30",
+				"Type":    "OVA",
+				"IDs": map[string]any{
+					"ID": 158, "AniDB": 3415, "ParentGroup": 876, "TopLevelGroup": 876,
+					"TMDB": map[string]any{"Show": []int{98026}},
+				},
+			})
+		case "/api/v3/Group/876/Series":
+			_ = json.NewEncoder(w).Encode([]map[string]any{
+				{"Name": "Night Shift Nurses", "IDs": map[string]any{"ID": 190}},
+				{
+					"Name": "Night Shift Nurses - Experiment",
+					"IDs":  map[string]any{"ID": 158, "ParentGroup": 876, "TopLevelGroup": 876},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	p := NewProvider(server.URL, "test-key", TagFilterConfig{})
+	results, err := p.Search(context.Background(), "Night Shift Nurses - Experiment", "series", 0, nil, "en")
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	got := results[0]
+	if got.Name != "Night Shift Nurses - Experiment" || got.ItemType != "series" {
+		t.Fatalf("result = (%q, %q), want exact series", got.Name, got.ItemType)
+	}
+	if got.ProviderIDs["shoko"] != "158" || got.ProviderIDs["shoko_series"] != "158" {
+		t.Fatalf("provider IDs = %#v, want Shoko series 158", got.ProviderIDs)
+	}
+	if got.ProviderIDs["shoko_group"] != "" {
+		t.Fatalf("provider IDs = %#v, exact series must not resolve as a group", got.ProviderIDs)
+	}
+	if got.ProviderIDs["tmdb"] != "98026" {
+		t.Fatalf("TMDB ID = %q, want 98026", got.ProviderIDs["tmdb"])
+	}
+
+	results, err = p.Search(context.Background(), "Night Shift Nurses - Experiment", "series", 0,
+		map[string]string{"shoko": "876", "shoko_group": "876"}, "en")
+	if err != nil {
+		t.Fatalf("Search() with existing group error = %v", err)
+	}
+	if len(results) != 1 || results[0].ProviderIDs["shoko_series"] != "158" {
+		t.Fatalf("Search() with existing group = %#v, want exact Shoko series 158", results)
+	}
+}
+
+func TestExactLinkedSeriesSearchResultsPreservesTMDBSeries(t *testing.T) {
+	t.Parallel()
+
+	series := &shokoSeries{Name: "Night Shift Nurses - Experiment", Type: "OVA"}
+	series.IDs.ID = 158
+	series.IDs.AniDB = 3415
+	series.IDs.ParentGroup = 876
+	series.IDs.TopLevelGroup = 876
+	series.IDs.TMDB.Show = []int{98026}
+
+	p := &Provider{}
+	results := p.exactLinkedSeriesSearchResults("Night Shift Nurses - Experiment", []*shokoSeries{series})
+	if len(results) != 1 {
+		t.Fatalf("len(results) = %d, want 1", len(results))
+	}
+	got := results[0]
+	if got.ProviderIDs["shoko_series"] != "158" || got.ProviderIDs["shoko_group"] != "" {
+		t.Fatalf("provider IDs = %#v, want exact Shoko series 158", got.ProviderIDs)
+	}
+	if got.ProviderIDs["tmdb"] != "98026" || got.ItemType != "series" {
+		t.Fatalf("result = %#v, want TMDB show 98026 as a series", got)
 	}
 }
