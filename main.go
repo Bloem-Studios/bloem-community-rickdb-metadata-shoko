@@ -21,7 +21,7 @@ import (
 	"github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/runtime"
 )
 
-var version = "0.2.7"
+var version = "0.2.8"
 
 //go:embed manifest.json
 var manifestJSON []byte
