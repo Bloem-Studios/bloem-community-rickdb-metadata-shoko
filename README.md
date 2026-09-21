@@ -1,3 +1,12 @@
+## Bloem community build
+
+This is Bloem's community build of [RickDB/silo-plugin-metadata-shoko](https://github.com/RickDB/silo-plugin-metadata-shoko) by **RickDB**
+(contributors: Quick104, RickDB, Rhainland). It is ported to the Bloem plugin SDK and listed in the
+Bloem community plugin catalog. All credit for the plugin goes to its author; please
+report plugin behavior issues upstream. See [NOTICE](NOTICE) for provenance.
+
+---
+
 # Silo Shoko Metadata Plugin
 
 Community metadata-provider plugin for [Silo Server](https://github.com/Silo-Server/silo-server), backed by [Shoko Server](https://github.com/ShokoAnime/ShokoServer).

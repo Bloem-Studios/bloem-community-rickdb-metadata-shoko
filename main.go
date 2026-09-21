@@ -15,10 +15,10 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/RickDB/silo-plugin-metadata-shoko/provider"
-	pluginv1 "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
-	publicmanifest "github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/manifest"
-	"github.com/Silo-Server/silo-plugin-sdk/pkg/pluginsdk/runtime"
+	"github.com/Bloem-Studios/bloem-community-rickdb-metadata-shoko/provider"
+	pluginv1 "github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginproto/silo/plugin/v1"
+	publicmanifest "github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/manifest"
+	"github.com/Bloem-Studios/bloem-plugin-sdk/pkg/pluginsdk/runtime"
 )
 
 var version = "0.2.6"

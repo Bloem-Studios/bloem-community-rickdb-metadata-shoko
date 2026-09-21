@@ -6,12 +6,12 @@
   "presentation": {
     "display_name": "Shoko Anime Metadata",
     "summary": "Shoko anime metadata with native Shoko search and Group-to-Series mapping.",
-    "description_markdown": "Uses Shoko Series/Search plus existing TMDB provider IDs to attach Shoko metadata to already matched Silo titles. Maps Shoko Groups to Silo shows, child Shoko Series to seasons, and AniDB-enriched episodes to Silo episodes. Adds filtered AniDB tags and Shoko/AniDB cross-references without requiring a second title match.",
+    "description_markdown": "Uses Shoko Series/Search plus existing TMDB provider IDs to attach Shoko metadata to already matched Silo titles. Maps Shoko Groups to Silo shows, child Shoko Series to seasons, and AniDB-enriched episodes to Silo episodes. Adds filtered AniDB tags and Shoko/AniDB cross-references without requiring a second title match.\n\nCommunity plugin by RickDB (https://github.com/RickDB/silo-plugin-metadata-shoko), built for Bloem on the Bloem plugin SDK.",
     "setup_markdown": "Install this plugin, then add **Shoko** to your anime library's metadata provider chain. Configure the Shoko Server address and API key in the plugin settings panel.",
     "homepage_url": "https://github.com/RickDB/silo-plugin-metadata-shoko",
-    "source_url": "https://github.com/RickDB/silo-plugin-metadata-shoko",
-    "support_url": "https://github.com/RickDB/silo-plugin-metadata-shoko/issues",
-    "changelog_url": "https://github.com/RickDB/silo-plugin-metadata-shoko/releases",
+    "source_url": "https://github.com/Bloem-Studios/bloem-community-rickdb-metadata-shoko",
+    "support_url": "https://github.com/Bloem-Studios/bloem-community-rickdb-metadata-shoko/issues",
+    "changelog_url": "https://github.com/Bloem-Studios/bloem-community-rickdb-metadata-shoko/releases",
     "publisher_name": "RickDB",
     "publisher_url": "https://github.com/RickDB",
     "license_spdx": "MIT"

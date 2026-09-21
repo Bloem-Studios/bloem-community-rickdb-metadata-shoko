@@ -1,9 +1,9 @@
-module github.com/RickDB/silo-plugin-metadata-shoko
+module github.com/Bloem-Studios/bloem-community-rickdb-metadata-shoko
 
 go 1.26.0
 
 require (
-	github.com/Silo-Server/silo-plugin-sdk v0.12.0
+	github.com/Bloem-Studios/bloem-plugin-sdk v0.16.1
 	github.com/Silo-Server/silo-plugin-tmdb v1.2.21
 	golang.org/x/time v0.14.0
 	google.golang.org/protobuf v1.36.11
@@ -18,9 +18,9 @@ require (
 	github.com/mattn/go-colorable v0.1.12 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
 	github.com/oklog/run v1.1.0 // indirect
-	golang.org/x/net v0.48.0 // indirect
-	golang.org/x/sys v0.40.0 // indirect
-	golang.org/x/text v0.32.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20251202230838-ff82c1b0f217 // indirect
-	google.golang.org/grpc v1.75.1 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/grpc v1.82.1 // indirect
 )
